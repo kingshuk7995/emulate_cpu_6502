@@ -1,4 +1,6 @@
 use m6502::{Cpu, Memory, Word};
+use std::env;
+use std::fs;
 
 fn main() {
     // Create memory with all zeros.
@@ -8,22 +10,42 @@ fn main() {
     memory.data[0xFFFC] = 0x00; // low byte
     memory.data[0xFFFD] = 0x80; // high byte
 
-    // Load a simple program at address 0x8000:
-    // INS_LDA_IM (0xA9) with immediate value 0x42,
-    // INS_NOP   (0xEA),
-    // INS_BRK   (0x00) - to stop execution.
+    // Determine start address.
     let start: Word = 0x8000;
-    memory.data[start as usize]     = 0xA9; // INS_LDA_IM
-    memory.data[start as usize + 1] = 0x42; // Value to load into A
-    memory.data[start as usize + 2] = 0xEA; // INS_NOP
-    memory.data[start as usize + 3] = 0x00; // INS_BRK
+
+    // Check if a program file was passed as an argument.
+    let args: Vec<String> = env::args().collect();
+    if args.len() > 1 {
+        // Read the program file as binary.
+        let filename = &args[1];
+        match fs::read(filename) {
+            Ok(program_bytes) => {
+                if start as usize + program_bytes.len() > memory.data.len() {
+                    eprintln!("Error: Program too large to fit in memory");
+                    return;
+                }
+                memory.data[start as usize..start as usize + program_bytes.len()]
+                    .copy_from_slice(&program_bytes);
+                println!("Program loaded from '{}'", filename);
+            }
+            Err(e) => {
+                eprintln!("Error reading '{}': {}", filename, e);
+                return;
+            }
+        }
+    } else {
+        // Load default program (INS_LDA_IM 0x42, INS_NOP, INS_BRK).
+        memory.data[start as usize]     = 0xA9; // INS_LDA_IM
+        memory.data[start as usize + 1] = 0x42; // Value to load into A
+        memory.data[start as usize + 2] = 0xEA; // INS_NOP
+        memory.data[start as usize + 3] = 0x00; // INS_BRK
+        println!("Default test program loaded");
+    }
 
     // Create a CPU instance and reset it.
     let mut cpu = Cpu::new();
     cpu.reset(&mut memory);
 
-    // Optionally, adjust PC to the value from the reset vector if needed.
-    // For this example, we assume that the CPU's reset procedure uses the vector.
     // Execute the program for a limited number of cycles.
     let cycles = 20;
     let cycles_consumed = cpu.execute(cycles, &mut memory);
